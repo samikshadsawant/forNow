@@ -1,0 +1,89 @@
+.waiting-screen {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  font-family: "Jua", sans-serif;
+
+  background:
+    radial-gradient(
+      circle at top,
+      color-mix(in srgb, var(--mood-color) 30%, white),
+      white 60%
+    );
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* REPORT BUTTON */
+.report-btn {
+  margin-top: 14px;
+  background: #ff0d0d;
+  color: white;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+/* CENTER AREA */
+.waiting-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+/* LOADER DOTS */
+.loader {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.loader span {
+  width: 10px;
+  height: 10px;
+  background: var(--mood-color);
+  border-radius: 50%;
+  animation: bounce 1.4s infinite ease-in-out both;
+}
+
+.loader span:nth-child(1) { animation-delay: -0.32s; }
+.loader span:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes bounce {
+  0%, 80%, 100% {
+    transform: scale(0);
+    opacity: 0.3;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* TEXT */
+.waiting-center h2 {
+  font-size: 18px;
+  margin-bottom: 6px;
+}
+
+.waiting-center p {
+  font-size: 14px;
+  margin: 2px 0;
+}
+
+/* CANCEL BUTTON */
+.cancel-btn {
+  margin-bottom: 22px;
+  background: #ff3b3b;
+  color: white;
+  border: none;
+  padding: 10px 22px;
+  border-radius: 999px;
+  font-size: 14px;
+}

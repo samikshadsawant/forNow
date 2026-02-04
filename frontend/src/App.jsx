@@ -1,9 +1,30 @@
-export default function App() {
+import { Routes, Route } from "react-router-dom";
+
+import Header from "./components/Header";
+import Footer from "./components/Footer";
+
+import LandingPage from "./pages/LandingPage";
+import CameraVerification from "./components/CameraVerification";
+import ProfileSetup from "./components/ProfileSetup";
+import MoodSelect from "./components/MoodSelect";
+import MatchWaiting from "./components/chat/MatchWaiting";
+
+function App() {
   return (
-    <div className="h-screen flex items-center justify-center bg-black">
-      <h1 className="text-3xl font-bold text-emerald-400">
-        Controlled Anon Chat 🚀
-      </h1>
-    </div>
+    <>
+      <Header />
+
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/camera" element={<CameraVerification />} />
+        <Route path="/profile" element={<ProfileSetup />} />
+        <Route path="/mood" element={<MoodSelect />} />
+        <Route path="/waiting" element={<MatchWaiting />} />
+      </Routes>
+
+      <Footer />
+    </>
   );
 }
+
+export default App;

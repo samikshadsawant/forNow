@@ -1,0 +1,48 @@
+.messages-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.message-bubble {
+  max-width: 75%;
+  padding: 12px 16px;
+  border-radius: 18px;
+  font-family: "Jua", sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  animation: popIn 0.25s ease-out;
+  word-wrap: break-word;
+}
+
+/* mine */
+.message-bubble.mine {
+  align-self: flex-end;
+  background: #ffffff;
+  color: #000;
+  border-bottom-right-radius: 6px;
+}
+
+/* partner */
+.message-bubble.theirs {
+  align-self: flex-start;
+  background: #eeeeee;
+  color: #000;
+  border-bottom-left-radius: 6px;
+}
+
+/* subtle bounce */
+@keyframes popIn {
+  0% {
+    transform: scale(0.95) translateY(4px);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
