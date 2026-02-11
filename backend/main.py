@@ -1,151 +1,167 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from datetime import date, datetime
-import json
-import asyncio
-import base64
-import io
-
-from transformers import pipeline
-from PIL import Image
-
 from redis_client import redis_client
+import json
 
 # -------------------------
 # App setup
 # -------------------------
 app = FastAPI()
 
-# -------------------------
-# Load Lua script
-# -------------------------
-with open("match.lua", "r") as f:
-    MATCH_SCRIPT = redis_client.register_script(f.read())
-
-# -------------------------
-# Safe send helper
-# -------------------------
-async def safe_send(ws: WebSocket, payload: dict):
-    try:
-        await ws.send_json(payload)
-    except Exception:
-        pass
-
-# -------------------------
-# Pub/Sub listener
-# -------------------------
-async def listen_partner(ws: WebSocket, device_id: str):
-    pubsub = redis_client.pubsub()
-    pubsub.subscribe(f"channel:{device_id}")
-
-    for msg in pubsub.listen():
-        if msg["type"] == "message":
-            await safe_send(ws, json.loads(msg["data"]))
-
-# -------------------------
-# WebSocket: Matchmaking
-# -------------------------
-@app.websocket("/ws/chat")
-async def chat(ws: WebSocket):
-    await ws.accept()
-
-    device_id = ws.query_params.get("device_id")
-    mood = ws.query_params.get("mood")
-    filter_pref = ws.query_params.get("filter", "any")
-
-    if not device_id or not mood:
-        await safe_send(ws, {"type": "error", "message": "Missing params"})
-        await ws.close()
-        return
-
-    today = date.today().isoformat()
-    limit_key = f"limit:{device_id}:{today}"
-    queue = f"queue:{mood}:{filter_pref}"
-
-    result = MATCH_SCRIPT(
-        keys=[queue],
-        args=[device_id, limit_key, 5],  # daily limit = 5
-    )
-
-    status = result[0]
-
-    if status == "LIMIT":
-        await safe_send(ws, {"type": "limit_reached"})
-        await ws.close()
-        return
-
-    if status == "WAIT":
-        await safe_send(ws, {"type": "waiting"})
-
-    if status == "MATCH":
-        partner = result[1]
-        await safe_send(ws, {"type": "matched"})
-        redis_client.publish(
-            f"channel:{partner}",
-            json.dumps({"type": "matched"}),
-        )
-
-    asyncio.create_task(listen_partner(ws, device_id))
-
-    try:
-        while True:
-            data = await ws.receive_json()
-
-            if data["type"] == "message":
-                partner = redis_client.get(f"pair:{device_id}")
-                if partner:
-                    redis_client.publish(
-                        f"channel:{partner}",
-                        json.dumps({"type": "message", "text": data["text"]}),
-                    )
-
-            elif data["type"] == "leave":
-                partner = redis_client.get(f"pair:{device_id}")
-                redis_client.delete(f"pair:{device_id}")
-                if partner:
-                    redis_client.delete(f"pair:{partner}")
-                    redis_client.publish(
-                        f"channel:{partner}",
-                        json.dumps({"type": "partner_left"}),
-                    )
-                break
-
-    except WebSocketDisconnect:
-        redis_client.delete(f"pair:{device_id}")
-
-# -------------------------
-# CORS
-# -------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["*"],  # dev only
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# -------------------------
-# Gender verification
-# -------------------------
-print("⏳ Loading gender classification model...")
-gender_classifier = pipeline("image-classification", model="rizvandwiki/gender-classification")
-print("✅ Gender classification model loaded")
+SESSION_TTL = 1800
+ONLINE_SET = "online_users"
+
+connections = {}  # session_id -> websocket
+
+
+# =========================
+# WebSocket Chat
+# =========================
+@app.websocket("/ws/chat/{session_id}")
+async def websocket_chat(ws: WebSocket, session_id: str):
+    await ws.accept()
+
+    key = f"session:{session_id}"
+    if not redis_client.exists(key):
+        await ws.close()
+        return
+
+    connections[session_id] = ws
+    redis_client.sadd(ONLINE_SET, session_id)
+
+    print("🟢 ONLINE:", session_id)
+
+    try:
+        await try_match(session_id)
+
+        while True:
+            data = await ws.receive_text()
+
+            partner = redis_client.get(f"match:{session_id}")
+
+            if partner:
+                partner_ws = connections.get(partner)
+                if partner_ws:
+                    await partner_ws.send_text(data)
+
+    except WebSocketDisconnect:
+        print("🔴 DISCONNECTED:", session_id)
+        await cleanup_user(session_id)
+
+
+async def try_match(session_id: str):
+    users = redis_client.smembers(ONLINE_SET)
+
+    for user in users:
+        if user == session_id:
+            continue
+
+        if not redis_client.exists(f"match:{user}"):
+            redis_client.set(f"match:{session_id}", user)
+            redis_client.set(f"match:{user}", session_id)
+
+            print("🤝 MATCH:", session_id, "<->", user)
+
+            ws1 = connections.get(session_id)
+            ws2 = connections.get(user)
+
+            if ws1:
+                await ws1.send_text("Matched!")
+            if ws2:
+                await ws2.send_text("Matched!")
+
+            return
+
+
+async def cleanup_user(session_id: str):
+    redis_client.srem(ONLINE_SET, session_id)
+
+    partner = redis_client.get(f"match:{session_id}")
+
+    if partner:
+        redis_client.delete(f"match:{partner}")
+        redis_client.delete(f"match:{session_id}")
+
+        partner_ws = connections.get(partner)
+        if partner_ws:
+            await partner_ws.send_text("Partner disconnected")
+
+    redis_client.delete(f"match:{session_id}")
+    connections.pop(session_id, None)
+
+
+# =========================
+# HTTP APIs
+# =========================
 
 class VerifyRequest(BaseModel):
-    device_id: str
+    session_id: str
     image: str
 
-def classify_gender_from_base64(base64_image: str) -> str:
-    image_data = base64_image.split(",")[1]
-    image_bytes = base64.b64decode(image_data)
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    result = gender_classifier(image)
-    return result[0]["label"]
+
+class ProfileRequest(BaseModel):
+    session_id: str
+    nickname: str
+    bio: str = ""
+
+
+@app.get("/")
+def health():
+    return {"status": "ok"}
+
 
 @app.post("/verify-gender")
 def verify_gender(data: VerifyRequest):
-    if not data.device_id:
-        raise HTTPException(400, "Missing device ID")
-    gender = classify_gender_from_base64(data.image)
-    return {"verified": True, "gender": gender}
+    if not data.session_id:
+        raise HTTPException(status_code=400, detail="Missing session ID")
+
+    if not data.image.startswith("data:image"):
+        raise HTTPException(status_code=400, detail="Invalid image format")
+
+    key = f"session:{data.session_id}"
+
+    redis_client.setex(
+        key,
+        SESSION_TTL,
+        json.dumps({"status": "verified"})
+    )
+
+    print("✅ VERIFIED (redis):", data.session_id)
+
+    return {"verified": True}
+
+
+@app.post("/profile")
+def setup_profile(data: ProfileRequest):
+    key = f"session:{data.session_id}"
+
+    raw = redis_client.get(key)
+    if not raw:
+        raise HTTPException(status_code=403, detail="Session expired or not verified")
+
+    session = json.loads(raw)
+
+    if not data.nickname.strip():
+        raise HTTPException(status_code=400, detail="Nickname required")
+
+    session["nickname"] = data.nickname.strip()
+    session["bio"] = data.bio.strip()
+
+    redis_client.setex(
+        key,
+        SESSION_TTL,
+        json.dumps(session)
+    )
+
+    print("👤 PROFILE (redis):", data.session_id, session)
+
+    return {"success": True}

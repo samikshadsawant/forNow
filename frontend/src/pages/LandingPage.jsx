@@ -26,11 +26,21 @@ export default function LandingPage() {
     return () => clearInterval(interval);
   }, []);
 
+  const handleStart = () => {
+    // fire & forget backend check
+    testBackendConnection()
+      .then(() => console.log("Backend connected"))
+      .catch(() => console.warn("Backend not reachable"));
+
+    // ALWAYS navigate
+    navigate("/camera");
+  };
+
   return (
     <main className="min-h-screen bg-[#f7f6f3] pt-24">
       <section className="flex flex-col items-center text-center px-6">
         <h1
-          className={`text-4xl md:text-5xl font-semibold transition ${
+          className={`text-4xl md:text-5xl font-semibold transition-opacity duration-400 ${
             visible ? "opacity-100" : "opacity-0"
           }`}
         >
@@ -43,10 +53,7 @@ export default function LandingPage() {
 
         <div className="mt-10">
           <button
-            onClick={async () => {
-              await testBackendConnection();
-              navigate("/camera");
-            }}
+            onClick={handleStart}
             className="px-10 py-4 rounded-full bg-[#ffce6a]"
           >
             Start conversation

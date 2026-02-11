@@ -1,5 +1,8 @@
+
 import { useState } from "react";
 import "../styles/MoodSelect.css";
+import { useNavigate } from "react-router-dom";
+
 
 // Mood images
 import justVibing from "../assets/moods/justvibing.png";
@@ -66,9 +69,15 @@ export default function MoodSelect({ onComplete }) {
     sessionStorage.setItem("mood", mood.id);
     sessionStorage.setItem("filter", genderFilter);
 
-    if (onComplete) {
-      onComplete(mood);
-    }
+   
+
+const navigate = useNavigate();
+
+const handleSelect = (mood) => {
+  sessionStorage.setItem("mood", mood.id);
+  navigate("/waiting");
+};
+
   };
 
   return (

@@ -1,90 +1,100 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import "../styles/ProfileSetup.css";
-import profilebg from "../assets/profile-bg.png";
 
 export default function ProfileSetup() {
   const navigate = useNavigate();
 
+  const sessionId = sessionStorage.getItem("session_id");
+
   const [nickname, setNickname] = useState("");
   const [bio, setBio] = useState("");
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const gender = sessionStorage.getItem("gender");
+  if (!sessionId) {
+    navigate("/");
+    return null;
+  }
 
-  // 🚨 Guard: must come from camera verification
-  useEffect(() => {
-    if (!gender) {
-      setError("Camera verification required.");
-    }
-  }, [gender]);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
 
-  const handleContinue = () => {
     if (!nickname.trim()) {
-      setError("Nickname is required.");
+      setError("Nickname is required");
       return;
     }
 
-    const profile = {
-      nickname: nickname.trim(),
-      bio: bio.trim(),
-      gender,
-    };
+    if (bio.length > 120) {
+      setError("Bio must be 1–2 lines (max 120 chars)");
+      return;
+    }
 
-    sessionStorage.setItem("profile", JSON.stringify(profile));
+    setLoading(true);
 
-    // ✅ MOVE FORWARD IN FLOW
-    navigate("/mood");
+    try {
+      const res = await fetch("http://localhost:8000/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionId,
+          nickname: nickname.trim(),
+          bio: bio.trim()
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.detail || "Profile setup failed");
+      }
+
+      navigate("/chat");
+    } catch (err) {
+      setError(err.message || "Server error");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div
-      className="profile-bg"
-      style={{ backgroundImage: `url(${profilebg})` }}
-    >
-      <div className="profile-card">
-        <h1 className="title">Welcome to forNow!</h1>
-        <p className="subtitle">Anonymous, but HUMAN.</p>
+    <div style={{ textAlign: "center", maxWidth: "360px", margin: "auto" }}>
+      <h2>Set up your profile</h2>
 
-        {error && <div className="error">{error}</div>}
+      <p style={{ fontSize: "14px", opacity: 0.8 }}>
+        Choose a temporary nickname and a short bio.
+        No photos. No history. Session-only.
+      </p>
 
-        {/* Nickname */}
-        <div className="field">
-          <label>Nickname *</label>
-          <input
-            type="text"
-            placeholder="nightowl_23"
-            value={nickname}
-            maxLength={20}
-            onChange={(e) => setNickname(e.target.value)}
-          />
-        </div>
+      {error && <p style={{ color: "red" }}>{error}</p>}
 
-        {/* Bio */}
-        <div className="field">
-          <label>Bio (optional)</label>
-          <textarea
-            placeholder="Just here for a chill conversation…"
-            value={bio}
-            maxLength={140}
-            onChange={(e) => setBio(e.target.value)}
-          />
-          <span className="char-count">{bio.length}/140</span>
-        </div>
+      <form onSubmit={handleSubmit}>
+        <input
+          type="text"
+          placeholder="Nickname"
+          maxLength={20}
+          value={nickname}
+          onChange={(e) => setNickname(e.target.value)}
+          style={{ width: "100%", padding: "10px", marginBottom: "10px" }}
+        />
 
-        {/* Gender */}
-        <div className="gender-box">
-          Detected gender: <strong>{gender?.toUpperCase()}</strong>
-        </div>
+        <textarea
+          placeholder="Short bio (optional)"
+          maxLength={120}
+          rows={3}
+          value={bio}
+          onChange={(e) => setBio(e.target.value)}
+          style={{ width: "100%", padding: "10px" }}
+        />
 
-        <button className="continue-btn" onClick={handleContinue}>
-          Continue
+        <button
+          type="submit"
+          disabled={loading}
+          style={{ marginTop: "16px", padding: "10px", width: "100%" }}
+        >
+          {loading ? "Saving..." : "Continue"}
         </button>
-
-        <p className="privacy-note">
-          Anonymous • Session-only • No data stored
-        </p>
-      </div>
+      </form>
     </div>
   );
 }
